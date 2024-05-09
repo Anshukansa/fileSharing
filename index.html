@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Sharing on Local Network</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .file-share {
+            margin: 20px;
+        }
+        .file-list {
+            list-style-type: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="file-share">
+        <input type="file" id="fileInput" />
+        <button id="sendFileBtn">Send File</button>
+        <ul id="fileList" class="file-list"></ul>
+    </div>
+
+    <script>
+        // Simplified WebRTC setup
+        let localConnection;
+        let remoteConnection;
+
+        // Elements
+        const fileInput = document.getElementById('fileInput');
+        const sendFileBtn = document.getElementById('sendFileBtn');
+        const fileList = document.getElementById('fileList');
+
+        // Initialize WebRTC connection
+        function setupConnection() {
+            localConnection = new RTCPeerConnection();
+            remoteConnection = new RTCPeerConnection();
+
+            // Data channel for file transfer
+            const dataChannel = localConnection.createDataChannel('fileTransfer');
+
+            // Handle data channel events
+            dataChannel.onopen = () => {
+                console.log('Data channel open');
+            };
+
+            dataChannel.onmessage = (event) => {
+                handleReceivedFile(event.data);
+            };
+
+            // Handle ICE candidates
+            localConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    remoteConnection.addIceCandidate(new RTCIceCandidate(event.candidate));
+                }
+            };
+
+            remoteConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    localConnection.addIceCandidate(new RTCIceCandidate(event.candidate));
+                }
+            };
+
+            // Create and exchange offer/answer
+            localConnection.createOffer().then((offer) => {
+                localConnection.setLocalDescription(offer);
+                remoteConnection.setRemoteDescription(offer);
+                return remoteConnection.createAnswer();
+            }).then((answer) => {
+                remoteConnection.setLocalDescription(answer);
+                localConnection.setRemoteDescription(answer);
+            });
+        }
+
+        // Send file
+        function sendFile() {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    const dataChannel = localConnection.getSenders().find(sender => sender.track.kind === 'video')?.track;
+                    if (dataChannel) {
+                        dataChannel.send(e.target.result);
+                    }
+                };
+
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        // Handle received file
+        function handleReceivedFile(data) {
+            const blob = new Blob([data]);
+            const url = URL.createObjectURL(blob);
+
+            const listItem = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = url;
+            link.textContent = 'Download File';
+            link.download = 'received_file';
+            listItem.appendChild(link);
+            fileList.appendChild(listItem);
+        }
+
+        // Event listeners
+        sendFileBtn.addEventListener('click', sendFile);
+
+        // Set up connection on page load
+        setupConnection();
+    </script>
+</body>
+</html>
