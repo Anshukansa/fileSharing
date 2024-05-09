@@ -2,45 +2,59 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>File Sharing on Local Network</title>
+    <title>File Sharing via WebRTC</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
+            padding: 20px;
         }
-        .file-share {
-            margin: 20px;
+        #controls {
+            margin-bottom: 20px;
         }
-        .file-list {
+        #sdps {
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #f9f9f9;
+        }
+        #fileList {
             list-style-type: none;
         }
     </style>
 </head>
 <body>
-    <div class="file-share">
+    <div id="controls">
         <input type="file" id="fileInput" />
         <button id="sendFileBtn">Send File</button>
-        <ul id="fileList" class="file-list"></ul>
+        <button id="createOfferBtn">Create Offer</button>
+        <button id="createAnswerBtn">Create Answer</button>
     </div>
+    <div id="sdps">
+        <textarea id="offerSDP" placeholder="Paste Offer SDP Here" rows="5" cols="60"></textarea>
+        <textarea id="answerSDP" placeholder="Paste Answer SDP Here" rows="5" cols="60"></textarea>
+    </div>
+    <ul id="fileList"></ul>
 
     <script>
-        // Simplified WebRTC setup
         let localConnection;
         let remoteConnection;
+        let dataChannel;
 
-        // Elements
         const fileInput = document.getElementById('fileInput');
         const sendFileBtn = document.getElementById('sendFileBtn');
+        const createOfferBtn = document.getElementById('createOfferBtn');
+        const createAnswerBtn = document.getElementById('createAnswerBtn');
+        const offerSDP = document.getElementById('offerSDP');
+        const answerSDP = document.getElementById('answerSDP');
         const fileList = document.getElementById('fileList');
 
-        // Initialize WebRTC connection
         function setupConnection() {
             localConnection = new RTCPeerConnection();
             remoteConnection = new RTCPeerConnection();
 
-            // Data channel for file transfer
-            const dataChannel = localConnection.createDataChannel('fileTransfer');
+            // Create a data channel for file transfer
+            dataChannel = localConnection.createDataChannel('fileTransfer');
 
             // Handle data channel events
             dataChannel.onopen = () => {
@@ -63,36 +77,49 @@
                     localConnection.addIceCandidate(new RTCIceCandidate(event.candidate));
                 }
             };
-
-            // Create and exchange offer/answer
-            localConnection.createOffer().then((offer) => {
-                localConnection.setLocalDescription(offer);
-                remoteConnection.setRemoteDescription(offer);
-                return remoteConnection.createAnswer();
-            }).then((answer) => {
-                remoteConnection.setLocalDescription(answer);
-                localConnection.setRemoteDescription(answer);
-            });
         }
 
-        // Send file
+        function createOffer() {
+            localConnection.createOffer()
+                .then((offer) => {
+                    return localConnection.setLocalDescription(offer);
+                })
+                .then(() => {
+                    offerSDP.value = localConnection.localDescription.sdp; // Share this with the other party
+                });
+        }
+
+        function createAnswer() {
+            const sdp = offerSDP.value.trim();
+            if (sdp) {
+                const offerDescription = new RTCSessionDescription({ type: 'offer', sdp });
+
+                remoteConnection.setRemoteDescription(offerDescription)
+                    .then(() => {
+                        return remoteConnection.createAnswer();
+                    })
+                    .then((answer) => {
+                        return remoteConnection.setLocalDescription(answer);
+                    })
+                    .then(() => {
+                        answerSDP.value = remoteConnection.localDescription.sdp; // Share this with the other party
+                    });
+            }
+        }
+
         function sendFile() {
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
                 const reader = new FileReader();
 
                 reader.onload = (e) => {
-                    const dataChannel = localConnection.getSenders().find(sender => sender.track.kind === 'video')?.track;
-                    if (dataChannel) {
-                        dataChannel.send(e.target.result);
-                    }
+                    dataChannel.send(e.target.result);
                 };
 
                 reader.readAsArrayBuffer(file);
             }
         }
 
-        // Handle received file
         function handleReceivedFile(data) {
             const blob = new Blob([data]);
             const url = URL.createObjectURL(blob);
@@ -106,10 +133,10 @@
             fileList.appendChild(listItem);
         }
 
-        // Event listeners
+        createOfferBtn.addEventListener('click', createOffer);
+        createAnswerBtn.addEventListener('click', createAnswer);
         sendFileBtn.addEventListener('click', sendFile);
 
-        // Set up connection on page load
         setupConnection();
     </script>
 </body>
